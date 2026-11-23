@@ -291,7 +291,7 @@ def _measure(name: Optional[str], args: dict,
 #: Operations that change the viewer; refused when ``allow_writes`` is off.
 WRITE_OPS = frozenset({
     "set_hough_params", "set_fit_params", "run_fit", "cancel_fit",
-    "clear_fits", "grab", "start_stream", "stop_stream",
+    "clear_fits", "set_scan_roi", "grab", "start_stream", "stop_stream",
 })
 
 
@@ -336,6 +336,8 @@ def _handle(request: dict, dispatcher: _MainThreadDispatcher,
         if op == "clear_fits":
             v.clear_fits()
             return {"fit_params": v.fit_params()}
+        if op == "set_scan_roi":
+            return {"bounds": v.set_scan_roi(args.get("bounds"))}
         if op == "grab":
             if v._streaming:
                 raise ViewerAPIError(
@@ -762,6 +764,14 @@ class RemoteViewer:
     def disable_hough(self) -> dict:
         """Turn detection off and clear the overlay."""
         return self.set_hough_params(enabled=False)
+
+    def set_scan_roi(self, bounds=None):
+        """Show a scan ROI as ``(x0, y0, x1, y1)`` pixels, or hide with None.
+
+        This overlay is separate from the viewer's interactive projection ROI.
+        """
+        values = None if bounds is None else list(bounds)
+        return self._call("set_scan_roi", bounds=values)["bounds"]
 
     def set_fit_params(self, method: Optional[str] = None,
                        n_gaussians: Optional[int] = None,
