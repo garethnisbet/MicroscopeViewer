@@ -343,6 +343,7 @@ class ImageVisualiser(QtWidgets.QMainWindow):
         self._fit_pending = []
         self._cameras = self._detect_cameras()
         self._hough_circles_items = []  # circle overlay curves
+        self._scan_roi_bounds = None     # tracked scan ROI: x0, y0, x1, y1
         self._hough_tracks = []         # persistent circle tracks
         self._hough_fresh = True        # next run is the first after a reset
         self._hough_norm = None         # smoothed (lo, hi) contrast limits
@@ -366,6 +367,41 @@ class ImageVisualiser(QtWidgets.QMainWindow):
         """Load a new image (greyscale or BGR/RGB ndarray)."""
         self._set_image(img, keep_fits=keep_fits)
         self._flush()
+
+    def set_scan_roi(self, bounds=None):
+        """Show the scan tracker ROI as ``(x0, y0, x1, y1)`` image pixels.
+
+        Pass ``None`` to hide it. This overlay is independent of the
+        interactive projection ROI and does not affect image analysis.
+        """
+        if bounds is None:
+            self._scan_roi_bounds = None
+        else:
+            if len(bounds) != 4:
+                raise ValueError("scan ROI needs (x0, y0, x1, y1)")
+            values = tuple(float(value) for value in bounds)
+            if not all(np.isfinite(value) for value in values):
+                raise ValueError("scan ROI coordinates must be finite")
+            x0, y0, x1, y1 = values
+            if x1 <= x0 or y1 <= y0:
+                raise ValueError("scan ROI must have positive width and height")
+            self._scan_roi_bounds = values
+        self._update_scan_roi_overlay()
+        self._flush()
+        return self._scan_roi_bounds
+
+    def _update_scan_roi_overlay(self):
+        bounds = self._scan_roi_bounds
+        if bounds is None:
+            self.scan_roi_item.hide()
+            self.scan_roi_label.hide()
+            return
+        x0, y0, x1, y1 = bounds
+        self.scan_roi_item.setData(
+            [x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0])
+        self.scan_roi_label.setPos(x0, y0)
+        self.scan_roi_item.show()
+        self.scan_roi_label.show()
 
     def get_image(self) -> Optional[np.ndarray]:
         """Return the current greyscale image, or None."""
@@ -674,6 +710,16 @@ class ImageVisualiser(QtWidgets.QMainWindow):
         self.plot_image.setAspectLocked(True)
         self.image_item = pg.ImageItem()
         self.plot_image.addItem(self.image_item)
+
+        # Scan tracker ROI, separate from the draggable projection ROI below.
+        scan_roi_pen = pg.mkPen("#00e5ff", width=2, style=QtCore.Qt.DashLine)
+        self.scan_roi_item = pg.PlotCurveItem(pen=scan_roi_pen)
+        self.plot_image.addItem(self.scan_roi_item)
+        self.scan_roi_label = pg.TextItem(
+            "Scan ROI", color="#00e5ff", anchor=(0, 1),
+            fill=pg.mkBrush(0, 0, 0, 150))
+        self.plot_image.addItem(self.scan_roi_label)
+        self._update_scan_roi_overlay()
 
         # ROI overlay (initially hidden)
         self.roi = pg.ROI(
